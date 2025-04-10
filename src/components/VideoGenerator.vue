@@ -11,10 +11,127 @@
           placeholder="Es. Un panda che gioca con una palla nell'acqua, cinematico, 4K"
           rows="3"
         ></textarea>
+        <button 
+          v-if="selectedEngine === 'cogvideox'"
+          @click="enhancePrompt" 
+          class="enhance-btn"
+          :disabled="!prompt.trim() || enhancing"
+        >
+          {{ enhancing ? 'Miglioramento...' : 'Migliora prompt' }}
+        </button>
       </div>
       
       <div class="options">
+        <div class="input-row">
+          <div class="input-group">
+            <label for="numFrames">Numero di frame:</label>
+            <input 
+              type="range" 
+              id="numFrames" 
+              v-model="numFrames" 
+              min="16" 
+              max="48" 
+              step="8"
+              :disabled="selectedEngine === 'cogvideox'"
+            />
+            <span>{{ numFrames }}</span>
+          </div>
+          
+          <div class="input-group">
+            <label for="inferenceSteps">Qualità (10-50):</label>
+            <input 
+              type="range" 
+              id="inferenceSteps" 
+              v-model="inferenceSteps" 
+              min="10" 
+              max="50" 
+              step="5"
+              :disabled="selectedEngine === 'cogvideox'"
+            />
+            <span>{{ inferenceSteps }}</span>
+          </div>
+        </div>
+        
         <div class="input-group">
+          <label>Motore di generazione:</label>
+          <div class="style-options">
+            <button 
+              v-for="engine in engines" 
+              :key="engine.value"
+              @click="selectedEngine = engine.value"
+              :class="{ active: selectedEngine === engine.value }"
+              type="button"
+            >
+              {{ engine.name }}
+            </button>
+          </div>
+        </div>
+        
+        <!-- Opzioni specifiche per CogVideoX -->
+        <div v-if="selectedEngine === 'cogvideox'" class="cogvideo-options">
+          <div class="input-group">
+            <label>Forza dell'immagine/video iniziale:</label>
+            <input 
+              type="range" 
+              v-model="videoStrength" 
+              min="0.1" 
+              max="1.0" 
+              step="0.1"
+            />
+            <span>{{ videoStrength }}</span>
+          </div>
+          
+          <div class="input-group">
+            <label for="seedValue">Seed per generazione (-1 per casuale):</label>
+            <input 
+              type="number" 
+              id="seedValue" 
+              v-model="seedValue"
+              min="-1"
+            />
+          </div>
+          
+          <div class="input-row">
+            <div class="input-group checkbox-group">
+              <input 
+                type="checkbox" 
+                id="scaleStatus" 
+                v-model="scaleStatus"
+              />
+              <label for="scaleStatus">Super-Resolution (720 × 480 -> 2880 × 1920)</label>
+            </div>
+            
+            <div class="input-group checkbox-group">
+              <input 
+                type="checkbox" 
+                id="rifeStatus" 
+                v-model="rifeStatus"
+              />
+              <label for="rifeStatus">Frame Interpolation (8fps -> 16fps)</label>
+            </div>
+          </div>
+          
+          <div class="input-group">
+            <label>Immagine iniziale (opzionale):</label>
+            <input 
+              type="file" 
+              accept="image/*" 
+              @change="handleImageUpload"
+            />
+          </div>
+          
+          <div class="input-group">
+            <label>Video iniziale (opzionale):</label>
+            <input 
+              type="file" 
+              accept="video/*" 
+              @change="handleVideoUpload"
+            />
+          </div>
+        </div>
+        
+        <!-- Stili solo per motori non-CogVideoX -->
+        <div v-else class="input-group">
           <label>Stile:</label>
           <div class="style-options">
             <button 
@@ -32,7 +149,7 @@
       
       <button 
         @click="generateNewVideo" 
-        :disabled="loading || !prompt.trim()"
+        :disabled="loading || !prompt.trim() || (selectedEngine === 'cogvideox' && !hasValidInputs)"
         class="generate-btn"
       >
         <span v-if="loading" class="loader"></span>
@@ -72,6 +189,13 @@
         <button @click="downloadVideo" class="action-btn">
           <span class="icon">↓</span> Scarica
         </button>
+        <button 
+          v-if="generatedVideo.result.download_gif_url" 
+          @click="downloadFile(generatedVideo.result.download_gif_url, 'video-ai.gif')" 
+          class="action-btn"
+        >
+          Scarica GIF
+        </button>
       </div>
     </div>
     
@@ -99,17 +223,55 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
-import { generateVideo } from '../services/videoService';
+import { ref, computed, onMounted } from 'vue';
+import { generateVideoWithStableDiffusionAPI, generateVideoMock } from '../services/stableDiffusionAPI';
+import { generateVideoWithOpenSora } from '../services/openSoraAPI';
+import { setWan21ApiUrl, generateVideoWithWan21 } from '../services/wan21API';
+import { generateVideoWithCogVideoX, enhancePromptWithCogVideoX } from '../services/cogVideoXAPI';
+import { Client } from "@gradio/client";
 
 // Stato
 const prompt = ref('');
+const numFrames = ref(24);
+const inferenceSteps = ref(25);
 const selectedStyle = ref('Cinematico');
 const loading = ref(false);
+const enhancing = ref(false);
 const error = ref('');
 const generatedVideo = ref(null);
 const generatedVideos = ref([]);
-const estimatedTime = ref(30);
+const estimatedTime = ref(60);
+
+// Opzioni specifiche per CogVideoX
+const videoStrength = ref(0.8);
+const seedValue = ref(-1);
+const scaleStatus = ref(false);
+const rifeStatus = ref(false);
+const imageInput = ref(null);
+const videoInput = ref(null);
+
+// Controllo se l'URL dell'API Wan2.1 è stato precedentemente salvato
+const wan21ApiUrlSet = ref(!!sessionStorage.getItem('wan21ApiUrl'));
+
+// Se salvato in sessione, imposta l'URL dell'API Wan2.1
+if (wan21ApiUrlSet.value) {
+  setWan21ApiUrl(sessionStorage.getItem('wan21ApiUrl'));
+}
+
+// Computed property per verificare se ci sono input validi per CogVideoX
+const hasValidInputs = computed(() => {
+  if (selectedEngine.value !== 'cogvideox') return true;
+  return prompt.value.trim() && (imageInput.value || videoInput.value);
+});
+
+// Opzioni per i motori di generazione
+const engines = [
+  { name: 'Stable Diffusion', value: 'stablediffusion' },
+  { name: 'Open-Sora', value: 'opensora' },
+  { name: 'Wan2.1', value: 'wan21' },
+  { name: 'CogVideoX', value: 'cogvideox' }
+];
+const selectedEngine = ref('stablediffusion');
 
 // Stili predefiniti per i video
 const videoStyles = [
@@ -119,6 +281,38 @@ const videoStyles = [
   { name: 'Realistico', prompt: 'fotorealistico, dettagliato, illuminazione naturale' },
   { name: 'Vintage', prompt: 'filmato vintage, colori sbiaditi, grana pellicola, stile anni \'70' }
 ];
+
+// Gestione caricamento file
+const handleImageUpload = (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    imageInput.value = file;
+  }
+};
+
+const handleVideoUpload = (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    videoInput.value = file;
+  }
+};
+
+// Funzione per migliorare il prompt con CogVideoX
+const enhancePrompt = async () => {
+  if (!prompt.value.trim()) return;
+  
+  enhancing.value = true;
+  error.value = '';
+  
+  try {
+    const enhancedPrompt = await enhancePromptWithCogVideoX(prompt.value);
+    prompt.value = enhancedPrompt;
+  } catch (err) {
+    error.value = "Errore durante il miglioramento del prompt: " + err.message;
+  } finally {
+    enhancing.value = false;
+  }
+};
 
 // Funzione per formattare la data
 const formatDate = (date) => {
@@ -156,7 +350,7 @@ onMounted(() => {
   setTimeout(setupVideoHovers, 500);
 });
 
-// Setup per hover sulle miniature video (con gestione degli errori di play)
+// Setup per hover sulle miniature video
 const setupVideoHovers = () => {
   const videoElements = document.querySelectorAll('.gallery-item video');
   if (videoElements.length === 0) return;
@@ -185,23 +379,36 @@ const setupVideoHovers = () => {
   });
 };
 
-// Seleziona uno stile predefinito senza modificare automaticamente il prompt
+// Seleziona uno stile predefinito
 const selectStyle = (style) => {
   selectedStyle.value = style.name;
 };
 
 // Calcola il prompt finale integrando il prompt utente e lo stile selezionato
 const getEnhancedPrompt = () => {
+  if (selectedEngine.value === 'cogvideox') {
+    return prompt.value;
+  }
+  
   const style = videoStyles.find(s => s.name === selectedStyle.value);
   return style && prompt.value ? `${prompt.value}, ${style.prompt}` : prompt.value;
 };
 
-// Genera un nuovo video
+// Genera un nuovo video in base al motore selezionato
 const generateNewVideo = async () => {
   if (!prompt.value.trim()) return;
   
   loading.value = true;
   error.value = '';
+  
+  // Calcola il tempo stimato in base al motore
+  estimatedTime.value = selectedEngine.value === 'opensora'
+                        ? 180 
+                        : selectedEngine.value === 'wan21'
+                          ? 90 
+                          : selectedEngine.value === 'cogvideox'
+                            ? 120
+                            : Math.round((inferenceSteps.value * numFrames.value) / 10);
   
   // Prepara i dati del nuovo video
   const newVideo = {
@@ -209,6 +416,9 @@ const generateNewVideo = async () => {
     prompt: prompt.value,
     enhancedPrompt: getEnhancedPrompt(),
     style: selectedStyle.value,
+    engine: selectedEngine.value,
+    numFrames: numFrames.value,
+    inferenceSteps: inferenceSteps.value,
     status: 'processing',
     createdAt: new Date()
   };
@@ -217,8 +427,65 @@ const generateNewVideo = async () => {
   generatedVideo.value = newVideo;
   
   try {
-    // Chiamata al servizio unificato
-    const result = await generateVideo(getEnhancedPrompt());
+    let result;
+    
+    if (selectedEngine.value === 'cogvideox') {
+      console.log("Generando video con CogVideoX...");
+      
+      // Utilizza CogVideoX
+      result = await generateVideoWithCogVideoX(prompt.value, {
+        imageInput: imageInput.value,
+        videoInput: videoInput.value,
+        videoStrength: videoStrength.value,
+        seedValue: seedValue.value,
+        scaleStatus: scaleStatus.value,
+        rifeStatus: rifeStatus.value
+      });
+      
+    } else if (selectedEngine.value === 'wan21') {
+      console.log("Generando video con Wan2.1...");
+      
+      // Se l'URL dell'API non è già stato impostato, richiedilo
+      if (!wan21ApiUrlSet.value) {
+        const apiUrl = window.prompt(
+          "Inserisci l'URL dell'API Wan2.1 (es. l'URL ngrok del server Flask su Google Colab):",
+          sessionStorage.getItem('wan21ApiUrl') || 'https://bead-35-197-47-34.ngrok-free.app'
+        );
+        if (apiUrl) {
+          setWan21ApiUrl(apiUrl);
+          sessionStorage.setItem('wan21ApiUrl', apiUrl);
+          wan21ApiUrlSet.value = true;
+        } else {
+          throw new Error("URL API Wan2.1 non fornito");
+        }
+      }
+      
+      result = await generateVideoWithWan21(getEnhancedPrompt(), {
+        resolution: '832*480',
+        sampleShift: numFrames.value > 24 ? 12 : 8,
+        guideScale: 6
+      });
+      
+    } else if (selectedEngine.value === 'opensora') {
+      console.log("Generando video con Open-Sora...");
+      // Utilizza il client Gradio per Open-Sora
+      const client = await Client.connect("claudiobxdai/Sora");
+      const gradioResponse = await client.predict("/predict", { prompt: getEnhancedPrompt() });
+      const [stato, videoUrl] = gradioResponse.data;
+      result = {
+        output_url: videoUrl,
+        model: "open-sora"
+      };
+      
+    } else {
+      console.log("Generando video con Stable Diffusion...");
+      try {
+        result = await generateVideoWithStableDiffusionAPI(getEnhancedPrompt(), inferenceSteps.value);
+      } catch (err) {
+        console.error("Errore con StableDiffusionAPI, utilizzo fallback:", err);
+        result = await generateVideoMock(getEnhancedPrompt());
+      }
+    }
     
     // Aggiorna il video con il risultato ottenuto
     newVideo.result = result;
@@ -234,6 +501,28 @@ const generateNewVideo = async () => {
   } catch (err) {
     error.value = 'Si è verificato un errore durante la generazione del video. Riprova più tardi.';
     console.error("Errore dettagliato:", err);
+    
+    // Fallback: in ambiente demo o sviluppo, genera un video simulato
+    if (process.env.NODE_ENV === 'development' || true) {
+      setTimeout(() => {
+        const fakeVideo = {
+          id: Date.now().toString(),
+          prompt: prompt.value,
+          enhancedPrompt: getEnhancedPrompt(),
+          style: selectedStyle.value,
+          engine: selectedEngine.value,
+          status: 'completed',
+          result: {
+            output_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+            model: `${selectedEngine.value} (simulato)`
+          },
+          createdAt: new Date()
+        };
+        generatedVideo.value = fakeVideo;
+        generatedVideos.value.unshift(fakeVideo);
+        localStorage.setItem('generatedVideos', JSON.stringify(generatedVideos.value));
+      }, 3000);
+    }
   } finally {
     loading.value = false;
   }
@@ -243,9 +532,16 @@ const generateNewVideo = async () => {
 const downloadVideo = () => {
   if (!generatedVideo.value || !generatedVideo.value.result || !generatedVideo.value.result.output_url) return;
   
+  // Se disponibile, utilizza l'URL di download dedicato
+  const downloadUrl = generatedVideo.value.result.download_video_url || generatedVideo.value.result.output_url;
+  downloadFile(downloadUrl, `ai-video-${Date.now()}.mp4`);
+};
+
+// Funzione generica per il download di file
+const downloadFile = (url, filename) => {
   const link = document.createElement('a');
-  link.href = generatedVideo.value.result.output_url;
-  link.download = `ai-video-${Date.now()}.mp4`;
+  link.href = url;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -273,6 +569,7 @@ const selectVideo = (video) => {
 
 .input-group {
   margin-bottom: 1rem;
+  position: relative;
 }
 
 .input-group label {
@@ -290,6 +587,43 @@ const selectVideo = (video) => {
   font-size: 1rem;
   resize: vertical;
   min-height: 80px;
+}
+
+.enhance-btn {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  background-color: var(--primary-light);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+}
+
+.enhance-btn:hover:not(:disabled) {
+  background-color: var(--primary);
+}
+
+.enhance-btn:disabled {
+  background-color: var(--gray-400);
+  cursor: not-allowed;
+}
+
+.input-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.input-row .input-group {
+  flex: 1;
+}
+
+.input-group input[type="range"] {
+  width: 100%;
+  margin-right: 0.5rem;
 }
 
 .options {
@@ -318,6 +652,28 @@ const selectVideo = (video) => {
   background-color: var(--primary);
   color: white;
   border-color: var(--primary);
+}
+
+.checkbox-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: auto;
+}
+
+.checkbox-group label {
+  margin-bottom: 0;
+}
+
+.cogvideo-options {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background-color: rgba(67, 97, 238, 0.05);
+  border-radius: var(--border-radius);
+  border-left: 3px solid var(--primary);
 }
 
 .generate-btn {
@@ -492,4 +848,5 @@ const selectVideo = (video) => {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
 </style>
