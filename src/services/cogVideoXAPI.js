@@ -63,8 +63,11 @@ export const generateVideoWithCogVideoX = async (prompt, options = {}) => {
         }
       });
 
+      // Rimuovi eventuali slash duplicati nell'URL
+      const apiUrl = `${PROXY_BASE_URL}/api/cogvideox/generate`.replace(/([^:]\/)\/+/g, "$1");
+
       const response = await axios.post(
-        `${PROXY_BASE_URL}/api/cogvideox/generate`,
+        apiUrl,
         formData,
         {
           headers: {
@@ -114,8 +117,11 @@ export const enhancePromptWithCogVideoX = async (prompt) => {
 
     if (USE_PROXY) {
       // Use the backend proxy
+      // Rimuovi eventuali slash duplicati nell'URL
+      const apiUrl = `${PROXY_BASE_URL}/api/cogvideox/enhance-prompt`.replace(/([^:]\/)\/+/g, "$1");
+      
       const response = await axios.post(
-        `${PROXY_BASE_URL}/api/cogvideox/enhance-prompt`,
+        apiUrl,
         { prompt },
         { timeout: 30000 } // 30 secondi di timeout
       );
@@ -153,8 +159,11 @@ export const resizeVideoForCogVideoX = async (videoInput) => {
       const formData = new FormData();
       formData.append('videoInput', videoInput);
 
+      // Rimuovi eventuali slash duplicati nell'URL
+      const apiUrl = `${PROXY_BASE_URL}/api/cogvideox/resize-video`.replace(/([^:]\/)\/+/g, "$1");
+
       const response = await axios.post(
-        `${PROXY_BASE_URL}/api/cogvideox/resize-video`,
+        apiUrl,
         formData,
         {
           headers: {
