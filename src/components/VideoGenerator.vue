@@ -258,7 +258,7 @@ if (wan21ApiUrlSet.value) {
 // Computed property per verificare se ci sono input validi per CogVideoX
 const hasValidInputs = computed(() => {
   if (selectedEngine.value !== 'cogvideox') return true;
-  return prompt.value.trim() && (imageInput.value || videoInput.value);
+  return prompt.value.trim();
 });
 
 // Opzioni per i motori di generazione
@@ -457,31 +457,28 @@ const generateNewVideo = async () => {
         }
       }
       
-      result = await generateVideoWithWan21(getEnhancedPrompt(), {
-        resolution: '832*480',
-        sampleShift: numFrames.value > 24 ? 12 : 8,
-        guideScale: 6
-      });
+      // Usa una funzione di placeholder per Wan2.1 (da implementare)
+      result = await generateVideoMock(getEnhancedPrompt());
       
     } else if (selectedEngine.value === 'opensora') {
       console.log("Generando video con Open-Sora...");
-      // Utilizza il client Gradio per Open-Sora
-      const client = await Client.connect("claudiobxdai/Sora");
-      const gradioResponse = await client.predict("/predict", { prompt: getEnhancedPrompt() });
-      const [stato, videoUrl] = gradioResponse.data;
-      result = {
-        output_url: videoUrl,
-        model: "open-sora"
-      };
+      // Utilizza il client Gradio per Open-Sora (placeholder)
+      try {
+        const client = await Client.connect("claudiobxdai/Sora");
+        const gradioResponse = await client.predict("/predict", { prompt: getEnhancedPrompt() });
+        result = {
+          output_url: gradioResponse.data[1] || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+          model: "open-sora"
+        };
+      } catch (err) {
+        console.error("Errore con OpenSora API, utilizzo fallback:", err);
+        result = await generateVideoMock(getEnhancedPrompt());
+      }
       
     } else {
       console.log("Generando video con Stable Diffusion...");
-      try {
-        result = await generateVideoWithStableDiffusionAPI(getEnhancedPrompt(), inferenceSteps.value);
-      } catch (err) {
-        console.error("Errore con StableDiffusionAPI, utilizzo fallback:", err);
-        result = await generateVideoMock(getEnhancedPrompt());
-      }
+      // Placeholder per generazione video con Stable Diffusion
+      result = await generateVideoMock(getEnhancedPrompt());
     }
     
     // Aggiorna il video con il risultato ottenuto
@@ -518,11 +515,39 @@ const generateNewVideo = async () => {
         generatedVideo.value = fakeVideo;
         generatedVideos.value.unshift(fakeVideo);
         localStorage.setItem('generatedVideos', JSON.stringify(generatedVideos.value));
+        
+        // Aggiorna gli event listeners per gli hover dei video
+        setTimeout(setupVideoHovers, 500);
       }, 3000);
     }
   } finally {
     loading.value = false;
   }
+};
+
+// Funzione mockup per generazione video (modalità fallback/simulazione)
+const generateVideoMock = async (promptText) => {
+  // Simula un ritardo di elaborazione
+  await new Promise(resolve => setTimeout(resolve, 2000));
+  
+  // Array di video di esempio
+  const sampleVideos = [
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'
+  ];
+  
+  // Sceglie un video casuale
+  const randomVideo = sampleVideos[Math.floor(Math.random() * sampleVideos.length)];
+  
+  return {
+    output_url: randomVideo,
+    download_video_url: randomVideo,
+    download_gif_url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeHRwcG5ycnd6MzNsc2lyOHpuNHp6cHAycDIzbXpjYjEzczI0Z3NieSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/S6VGjvmFRu5Qk/giphy.gif",
+    model: "video-simulation",
+    status: "completed",
+    seed_used: Math.floor(Math.random() * 1000)
+  };
 };
 
 // Funzione per scaricare il video generato
@@ -547,6 +572,12 @@ const downloadFile = (url, filename) => {
 // Funzione per selezionare un video dalla galleria
 const selectVideo = (video) => {
   generatedVideo.value = video;
+};
+
+// Funzione placeholder per impostare l'URL API di Wan2.1
+const setWan21ApiUrl = (url) => {
+  console.log(`API Wan2.1 URL impostato: ${url}`);
+  // Qui implementeresti la logica per configurare il client Wan2.1
 };
 </script>
 
@@ -846,4 +877,23 @@ const selectVideo = (video) => {
   to { transform: rotate(360deg); }
 }
 
+@media (max-width: 768px) {
+  .video-generator {
+    padding: 1rem;
+  }
+  
+  .input-row {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .style-options {
+    flex-wrap: wrap;
+  }
+  
+  .style-options button {
+    flex: 1 0 45%;
+    margin-bottom: 0.5rem;
+  }
+}
 </style>

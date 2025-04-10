@@ -1,9 +1,8 @@
 // src/services/cogVideoXAPI.js
 import axios from "axios";
 
-// Flag per decidere se usare la versione diretta o il proxy server
-const USE_PROXY = true;
-const PROXY_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://videoai-backend.onrender.com"; // Cambia in base al tuo backend
+// URL del backend
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://videoai-backend.onrender.com";
 
 /**
  * Generate a video using CogVideoX-5B-Space
@@ -35,68 +34,51 @@ export const generateVideoWithCogVideoX = async (prompt, options = {}) => {
       throw new Error("Prompt is required");
     }
 
-    if (USE_PROXY) {
-      // Use the backend proxy to make the request
-      const formData = new FormData();
-      formData.append('prompt', prompt);
-      
-      if (imageInput) formData.append('imageInput', imageInput);
-      if (videoInput) formData.append('videoInput', videoInput);
-      
-      formData.append('options', JSON.stringify({
-        videoStrength,
-        seedValue,
-        scaleStatus,
-        rifeStatus
-      }));
+    // Create form data to send files
+    const formData = new FormData();
+    formData.append('prompt', prompt);
+    
+    // Add files only if they exist
+    if (imageInput) formData.append('imageInput', imageInput);
+    if (videoInput) formData.append('videoInput', videoInput);
+    
+    // Add other options as JSON
+    formData.append('options', JSON.stringify({
+      videoStrength,
+      seedValue,
+      scaleStatus,
+      rifeStatus
+    }));
 
-      // Aggiungi log per verificare i dati inviati
-      console.log("Sending data to proxy:", {
-        prompt,
-        hasImageInput: !!imageInput,
-        hasVideoInput: !!videoInput,
-        options: {
-          videoStrength,
-          seedValue,
-          scaleStatus,
-          rifeStatus
-        }
-      });
+    // Remove any duplicate slashes in URL
+    const apiUrl = `${API_BASE_URL}/api/cogvideox/generate`.replace(/([^:]\/)\/+/g, "$1");
 
-      // Rimuovi eventuali slash duplicati nell'URL
-      const apiUrl = `${PROXY_BASE_URL}/api/cogvideox/generate`.replace(/([^:]\/)\/+/g, "$1");
-
-      const response = await axios.post(
-        apiUrl,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          },
-          // Aggiungi timeout più lungo per dare tempo alla generazione
-          timeout: 300000, // 5 minuti
-        }
-      );
-
-      console.log("Response from CogVideoX API:", response.data);
-
-      if (response.data.success) {
-        // Assicurati che la struttura della risposta sia compatibile
-        // con ciò che il componente frontend si aspetta
-        return {
-          output_url: response.data.data[0],
-          download_video_url: response.data.data[1],
-          download_gif_url: response.data.data[2],
-          seed_used: response.data.data[3],
-          model: response.data.model || "CogVideoX-5B-Space"
-        };
-      } else {
-        throw new Error(response.data.error || "Unknown error");
+    const response = await axios.post(
+      apiUrl,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        },
+        // Add longer timeout for video generation
+        timeout: 300000, // 5 minutes
       }
+    );
+
+    console.log("Response from CogVideoX API:", response.data);
+
+    if (response.data.success) {
+      // Format the response to match what the frontend expects
+      return {
+        output_url: response.data.data[0],
+        download_video_url: response.data.data[1],
+        download_gif_url: response.data.data[2],
+        seed_used: response.data.data[3],
+        model: response.data.model || "CogVideoX-5B-Space",
+        fallback: response.data.fallback || false
+      };
     } else {
-      // Questa implementazione non funzionerà direttamente nel browser a causa di CORS
-      // e limitazioni con i moduli Node.js nel browser
-      throw new Error("Direct API call implementation not supported. Please use proxy mode.");
+      throw new Error(response.data.error || "Unknown error");
     }
   } catch (error) {
     console.error("Error during video generation with CogVideoX:", error);
@@ -115,27 +97,21 @@ export const enhancePromptWithCogVideoX = async (prompt) => {
       throw new Error("Prompt is required");
     }
 
-    if (USE_PROXY) {
-      // Use the backend proxy
-      // Rimuovi eventuali slash duplicati nell'URL
-      const apiUrl = `${PROXY_BASE_URL}/api/cogvideox/enhance-prompt`.replace(/([^:]\/)\/+/g, "$1");
-      
-      const response = await axios.post(
-        apiUrl,
-        { prompt },
-        { timeout: 30000 } // 30 secondi di timeout
-      );
+    // Remove any duplicate slashes in URL
+    const apiUrl = `${API_BASE_URL}/api/cogvideox/enhance-prompt`.replace(/([^:]\/)\/+/g, "$1");
+    
+    const response = await axios.post(
+      apiUrl,
+      { prompt },
+      { timeout: 30000 } // 30 secondi di timeout
+    );
 
-      console.log("Response from enhance prompt API:", response.data);
+    console.log("Response from enhance prompt API:", response.data);
 
-      if (response.data.success) {
-        return response.data.enhancedPrompt;
-      } else {
-        throw new Error(response.data.error || "Unknown error");
-      }
+    if (response.data.success) {
+      return response.data.enhancedPrompt;
     } else {
-      // Direct call implementation not supported in browser
-      throw new Error("Direct API call implementation not supported. Please use proxy mode.");
+      throw new Error(response.data.error || "Unknown error");
     }
   } catch (error) {
     console.error("Error enhancing prompt with CogVideoX:", error);
@@ -154,36 +130,29 @@ export const resizeVideoForCogVideoX = async (videoInput) => {
       throw new Error("Video input is required");
     }
 
-    if (USE_PROXY) {
-      // Use the backend proxy
-      const formData = new FormData();
-      formData.append('videoInput', videoInput);
+    const formData = new FormData();
+    formData.append('videoInput', videoInput);
 
-      // Rimuovi eventuali slash duplicati nell'URL
-      const apiUrl = `${PROXY_BASE_URL}/api/cogvideox/resize-video`.replace(/([^:]\/)\/+/g, "$1");
+    // Remove any duplicate slashes in URL
+    const apiUrl = `${API_BASE_URL}/api/cogvideox/resize-video`.replace(/([^:]\/)\/+/g, "$1");
 
-      const response = await axios.post(
-        apiUrl,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data'
-          },
-          timeout: 120000 // 2 minuti di timeout
-        }
-      );
-
-      console.log("Response from resize video API:", response.data);
-
-      if (response.data.success) {
-        // La risposta dipenderà da come hai implementato l'endpoint nel backend
-        return response.data.resizedVideo;
-      } else {
-        throw new Error(response.data.error || "Unknown error");
+    const response = await axios.post(
+      apiUrl,
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        },
+        timeout: 120000 // 2 minutes timeout
       }
+    );
+
+    console.log("Response from resize video API:", response.data);
+
+    if (response.data.success) {
+      return response.data.resizedVideo;
     } else {
-      // Direct call implementation not supported in browser
-      throw new Error("Direct API call implementation not supported. Please use proxy mode.");
+      throw new Error(response.data.error || "Unknown error");
     }
   } catch (error) {
     console.error("Error resizing video for CogVideoX:", error);
