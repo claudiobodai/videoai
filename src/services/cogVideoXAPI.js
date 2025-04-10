@@ -4,7 +4,7 @@ import axios from "axios";
 
 // Flag per decidere se usare la versione diretta o il proxy server
 const USE_PROXY = true;
-const PROXY_BASE_URL = "http://localhost:3001"; // Cambia in base al tuo backend
+const PROXY_BASE_URL = "https://videoai-backend.onrender.com"; // Cambia in base al tuo backend
 
 /**
  * Generate a video using CogVideoX-5B-Space

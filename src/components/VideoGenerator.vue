@@ -224,9 +224,6 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
-import { generateVideoWithStableDiffusionAPI, generateVideoMock } from '../services/stableDiffusionAPI';
-import { generateVideoWithOpenSora } from '../services/openSoraAPI';
-import { setWan21ApiUrl, generateVideoWithWan21 } from '../services/wan21API';
 import { generateVideoWithCogVideoX, enhancePromptWithCogVideoX } from '../services/cogVideoXAPI';
 import { Client } from "@gradio/client";
 
