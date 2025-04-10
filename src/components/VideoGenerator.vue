@@ -14,49 +14,6 @@
       </div>
       
       <div class="options">
-        <div class="input-row">
-          <div class="input-group">
-            <label for="numFrames">Numero di frame:</label>
-            <input 
-              type="range" 
-              id="numFrames" 
-              v-model="numFrames" 
-              min="16" 
-              max="48" 
-              step="8"
-            />
-            <span>{{ numFrames }}</span>
-          </div>
-          
-          <div class="input-group">
-            <label for="inferenceSteps">Qualità (10-50):</label>
-            <input 
-              type="range" 
-              id="inferenceSteps" 
-              v-model="inferenceSteps" 
-              min="10" 
-              max="50" 
-              step="5"
-            />
-            <span>{{ inferenceSteps }}</span>
-          </div>
-        </div>
-        
-        <div class="input-group">
-          <label>Motore di generazione:</label>
-          <div class="style-options">
-            <button 
-              v-for="engine in engines" 
-              :key="engine.value"
-              @click="selectedEngine = engine.value"
-              :class="{ active: selectedEngine === engine.value }"
-              type="button"
-            >
-              {{ engine.name }}
-            </button>
-          </div>
-        </div>
-        
         <div class="input-group">
           <label>Stile:</label>
           <div class="style-options">
@@ -143,36 +100,16 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { generateVideoWithStableDiffusionAPI } from '../services/stableDiffusionAPI';
-import { generateVideoWithOpenSora } from '../services/openSoraAPI';
-import { setWan21ApiUrl, generateVideoWithWan21 } from '../services/wan21API';
-import { Client } from "@gradio/client";
+import { generateVideo } from '../services/videoService';
 
 // Stato
 const prompt = ref('');
-const numFrames = ref(24);
-const inferenceSteps = ref(25);
 const selectedStyle = ref('Cinematico');
 const loading = ref(false);
 const error = ref('');
 const generatedVideo = ref(null);
 const generatedVideos = ref([]);
-const estimatedTime = ref(60);
-// Controllo se l'URL dell'API Wan2.1 è stato precedentemente salvato (es. dall'API Flask esposta con ngrok su Google Colab)
-const wan21ApiUrlSet = ref(!!sessionStorage.getItem('wan21ApiUrl'));
-
-// Se salvato in sessione, imposta l'URL dell'API Wan2.1
-if (wan21ApiUrlSet.value) {
-  setWan21ApiUrl(sessionStorage.getItem('wan21ApiUrl'));
-}
-
-// Opzioni per i motori di generazione
-const engines = [
-  { name: 'Stable Diffusion', value: 'stablediffusion' },
-  { name: 'Open-Sora', value: 'opensora' },
-  { name: 'Wan2.1', value: 'wan21' }
-];
-const selectedEngine = ref('stablediffusion');
+const estimatedTime = ref(30);
 
 // Stili predefiniti per i video
 const videoStyles = [
@@ -259,19 +196,12 @@ const getEnhancedPrompt = () => {
   return style && prompt.value ? `${prompt.value}, ${style.prompt}` : prompt.value;
 };
 
-// Genera un nuovo video in base al motore selezionato
+// Genera un nuovo video
 const generateNewVideo = async () => {
   if (!prompt.value.trim()) return;
   
   loading.value = true;
   error.value = '';
-  
-  // Calcola il tempo stimato in base al motore
-  estimatedTime.value = selectedEngine.value === 'opensora'
-                        ? 180 
-                        : selectedEngine.value === 'wan21'
-                          ? 90 
-                          : Math.round((inferenceSteps.value * numFrames.value) / 10);
   
   // Prepara i dati del nuovo video
   const newVideo = {
@@ -279,9 +209,6 @@ const generateNewVideo = async () => {
     prompt: prompt.value,
     enhancedPrompt: getEnhancedPrompt(),
     style: selectedStyle.value,
-    engine: selectedEngine.value,
-    numFrames: numFrames.value,
-    inferenceSteps: inferenceSteps.value,
     status: 'processing',
     createdAt: new Date()
   };
@@ -290,44 +217,8 @@ const generateNewVideo = async () => {
   generatedVideo.value = newVideo;
   
   try {
-    let result;
-    if (selectedEngine.value === 'wan21') {
-      console.log("Generando video con Wan2.1...");
-      
-      // Se l'URL dell'API non è già stato impostato, richiedilo tramite window.prompt
-      if (!wan21ApiUrlSet.value) {
-        const apiUrl = window.prompt(
-          "Inserisci l'URL dell'API Wan2.1 (es. l'URL ngrok del server Flask su Google Colab):",
-          sessionStorage.getItem('wan21ApiUrl') || 'https://bead-35-197-47-34.ngrok-free.app'
-        );
-        if (apiUrl) {
-          setWan21ApiUrl(apiUrl);
-          sessionStorage.setItem('wan21ApiUrl', apiUrl);
-          wan21ApiUrlSet.value = true;
-        } else {
-          throw new Error("URL API Wan2.1 non fornito");
-        }
-      }
-      
-      result = await generateVideoWithWan21(getEnhancedPrompt(), {
-        resolution: '832*480',
-        sampleShift: numFrames.value > 24 ? 12 : 8,
-        guideScale: 6
-      });
-    } else if (selectedEngine.value === 'opensora') {
-      console.log("Generando video con Open-Sora...");
-      // Utilizza il client Gradio per Open-Sora
-      const client = await Client.connect("claudiobxdai/Sora");
-      const gradioResponse = await client.predict("/predict", { prompt: getEnhancedPrompt() });
-      const [stato, videoUrl] = gradioResponse.data;
-      result = {
-        output_url: videoUrl,
-        model: "open-sora"
-      };
-    } else {
-      console.log("Generando video con Stable Diffusion...");
-      result = await generateVideoWithStableDiffusionAPI(getEnhancedPrompt(), inferenceSteps.value);
-    }
+    // Chiamata al servizio unificato
+    const result = await generateVideo(getEnhancedPrompt());
     
     // Aggiorna il video con il risultato ottenuto
     newVideo.result = result;
@@ -343,32 +234,6 @@ const generateNewVideo = async () => {
   } catch (err) {
     error.value = 'Si è verificato un errore durante la generazione del video. Riprova più tardi.';
     console.error("Errore dettagliato:", err);
-    
-    // Fallback: in ambiente demo o sviluppo, genera un video simulato
-    if (process.env.NODE_ENV === 'development' || true) {
-      setTimeout(() => {
-        const fakeVideo = {
-          id: Date.now().toString(),
-          prompt: prompt.value,
-          enhancedPrompt: getEnhancedPrompt(),
-          style: selectedStyle.value,
-          engine: selectedEngine.value,
-          status: 'completed',
-          result: {
-            output_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-            model: selectedEngine.value === 'opensora'
-                     ? 'open-sora (simulato)'
-                     : selectedEngine.value === 'wan21'
-                       ? 'wan2.1 (simulato)'
-                       : 'stable-diffusion (simulato)'
-          },
-          createdAt: new Date()
-        };
-        generatedVideo.value = fakeVideo;
-        generatedVideos.value.unshift(fakeVideo);
-        localStorage.setItem('generatedVideos', JSON.stringify(generatedVideos.value));
-      }, 3000);
-    }
   } finally {
     loading.value = false;
   }
@@ -391,7 +256,6 @@ const selectVideo = (video) => {
   generatedVideo.value = video;
 };
 </script>
-
 
 <style scoped>
 .video-generator {
@@ -426,21 +290,6 @@ const selectVideo = (video) => {
   font-size: 1rem;
   resize: vertical;
   min-height: 80px;
-}
-
-.input-row {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.input-row .input-group {
-  flex: 1;
-}
-
-.input-group input[type="range"] {
-  width: 100%;
-  margin-right: 0.5rem;
 }
 
 .options {

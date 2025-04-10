@@ -3,11 +3,16 @@
     <Navbar />
     <div class="videos-page">
       <div class="page-header">
-        <h1>Generatore di Video con AI</h1>
+        <h1>Generatore di Video con AI <span class="beta-badge">BETA</span></h1>
         <p class="subheading">
-          Trasforma le tue idee in video dinamici utilizzando la più recente tecnologia AI.
-          Descrivi ciò che vorresti vedere e lascia che l'AI si occupi del resto.
+          La generazione di video AI è in fase di sviluppo. Per ora, questa funzione utilizza una simulazione per mostrarti come funzionerà quando sarà completamente implementata.
         </p>
+        <div class="beta-info">
+          <div class="info-icon">ℹ️</div>
+          <div class="info-content">
+            <p>Stiamo integrando nuove API per la generazione di video. Attualmente stiamo esplorando diverse soluzioni come StableDiffusion Text-to-Video, OpenSora e altri modelli emergenti. Puoi già sperimentare con l'interfaccia mentre lavoriamo all'integrazione delle API funzionanti.</p>
+          </div>
+        </div>
       </div>
       
       <VideoGenerator />
@@ -59,15 +64,14 @@
           </div>
         </div>
         
-        <div class="limitations">
-          <h4>Limitazioni attuali</h4>
-          <p>La generazione di video con AI è ancora in fase iniziale di sviluppo, quindi tieni presente che:</p>
+        <div class="coming-soon-section">
+          <h4>Cosa prevediamo di implementare presto</h4>
           <ul>
-            <li>I video generati sono brevi (tipicamente 3-5 secondi)</li>
-            <li>I soggetti umani potrebbero apparire distorti o non naturali</li>
-            <li>Testi e scritte non vengono riprodotti accuratamente</li>
-            <li>Scene complesse con molti soggetti potrebbero risultare confuse</li>
-            <li>La generazione richiede tempo (1-3 minuti per video)</li>
+            <li><strong>Integrazione con Stable Diffusion Text-to-Video</strong> - Generazione di video di alta qualità basata sul popolare modello Stable Diffusion</li>
+            <li><strong>Controllo di durata</strong> - Possibilità di generare video di lunghezza personalizzata</li>
+            <li><strong>Dimensioni personalizzate</strong> - Opzioni per diversi rapporti di aspetto e risoluzioni</li>
+            <li><strong>Aggiunta di audio</strong> - Supporto per generazione e sincronizzazione audio</li>
+            <li><strong>Stili avanzati</strong> - Maggiore controllo sullo stile visivo del video generato</li>
           </ul>
         </div>
       </div>
@@ -90,6 +94,7 @@ import VideoGenerator from '../components/VideoGenerator.vue';
 .page-header {
   text-align: center;
   margin-bottom: 2.5rem;
+  position: relative;
 }
 
 .subheading {
@@ -97,6 +102,39 @@ import VideoGenerator from '../components/VideoGenerator.vue';
   margin: 0 auto;
   color: var(--gray-600);
   font-size: 1.1rem;
+}
+
+.beta-badge {
+  display: inline-block;
+  background-color: var(--warning);
+  color: white;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+  font-weight: bold;
+}
+
+.beta-info {
+  display: flex;
+  align-items: flex-start;
+  background-color: var(--info);
+  color: white;
+  padding: 1rem;
+  border-radius: var(--border-radius);
+  margin: 1.5rem auto;
+  max-width: 800px;
+}
+
+.info-icon {
+  font-size: 1.5rem;
+  margin-right: 1rem;
+}
+
+.info-content p {
+  margin: 0;
+  font-size: 0.95rem;
 }
 
 .tips-section {
@@ -176,26 +214,26 @@ import VideoGenerator from '../components/VideoGenerator.vue';
   font-weight: 500;
 }
 
-.limitations {
+.coming-soon-section {
   margin-top: 3rem;
   padding: 1.5rem;
-  background-color: #fff5f5;
+  background-color: #f0f7ff;
   border-radius: var(--border-radius);
-  border-left: 4px solid var(--danger);
+  border-left: 4px solid var(--primary);
 }
 
-.limitations h4 {
-  color: var(--danger);
+.coming-soon-section h4 {
+  color: var(--primary);
   margin-bottom: 1rem;
 }
 
-.limitations ul {
+.coming-soon-section ul {
   margin-top: 0.5rem;
   padding-left: 1.5rem;
 }
 
-.limitations li {
-  margin-bottom: 0.5rem;
+.coming-soon-section li {
+  margin-bottom: 0.75rem;
 }
 
 @media (max-width: 768px) {

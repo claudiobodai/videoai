@@ -105,7 +105,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { generateImageWithStableDiffusion, enhanceImageResolution } from '../services/huggingface';
+import { generateImage as generateImageAPI, enhanceImageResolution } from '../services/imageService';
 
 // Stato
 const prompt = ref('');
@@ -148,7 +148,11 @@ const generateImage = async () => {
   error.value = '';
   
   try {
-    const result = await generateImageWithStableDiffusion(prompt.value);
+    const result = await generateImageAPI(prompt.value, {
+      guidanceScale: guidanceScale.value,
+      numInferenceSteps: steps.value,
+      negativePrompt: negativePrompt.value
+    });
     
     // Creazione dell'oggetto immagine
     const newImage = {

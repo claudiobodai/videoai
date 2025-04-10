@@ -3,6 +3,7 @@ import Home from "../views/Home.vue";
 import Login from "../views/Login.vue";
 import ImagesView from "../views/ImagesView.vue";
 import VideosView from "../views/VideosView.vue";
+import ApiStatus from "../views/ApiStatus.vue";
 import { useAuthStore } from '../stores/auth';
 
 const routes = [
@@ -26,6 +27,12 @@ const routes = [
     path: "/videos",
     name: "Videos",
     component: VideosView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: "/api-status",
+    name: "ApiStatus",
+    component: ApiStatus,
     meta: { requiresAuth: true }
   }
 ];
