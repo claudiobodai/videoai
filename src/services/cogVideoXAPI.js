@@ -1,10 +1,9 @@
 // src/services/cogVideoXAPI.js
-import { Client } from "@gradio/client";
 import axios from "axios";
 
 // Flag per decidere se usare la versione diretta o il proxy server
 const USE_PROXY = true;
-const PROXY_BASE_URL = "https://videoai-backend.onrender.com"; // Cambia in base al tuo backend
+const PROXY_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://videoai-backend.onrender.com"; // Cambia in base al tuo backend
 
 /**
  * Generate a video using CogVideoX-5B-Space
@@ -51,17 +50,36 @@ export const generateVideoWithCogVideoX = async (prompt, options = {}) => {
         rifeStatus
       }));
 
+      // Aggiungi log per verificare i dati inviati
+      console.log("Sending data to proxy:", {
+        prompt,
+        hasImageInput: !!imageInput,
+        hasVideoInput: !!videoInput,
+        options: {
+          videoStrength,
+          seedValue,
+          scaleStatus,
+          rifeStatus
+        }
+      });
+
       const response = await axios.post(
         `${PROXY_BASE_URL}/api/cogvideox/generate`,
         formData,
         {
           headers: {
             'Content-Type': 'multipart/form-data'
-          }
+          },
+          // Aggiungi timeout più lungo per dare tempo alla generazione
+          timeout: 300000, // 5 minuti
         }
       );
 
+      console.log("Response from CogVideoX API:", response.data);
+
       if (response.data.success) {
+        // Assicurati che la struttura della risposta sia compatibile
+        // con ciò che il componente frontend si aspetta
         return {
           output_url: response.data.data[0],
           download_video_url: response.data.data[1],
@@ -73,34 +91,9 @@ export const generateVideoWithCogVideoX = async (prompt, options = {}) => {
         throw new Error(response.data.error || "Unknown error");
       }
     } else {
-      // Direct API call using Gradio client
-      // Connect to the CogVideoX Space
-      const client = await Client.connect("THUDM/CogVideoX-5B-Space");
-
-      // Generate the video
-      const result = await client.predict("/generate", {
-        prompt,
-        image_input: imageInput,
-        video_input: videoInput,
-        video_strength: videoStrength,
-        seed_value: seedValue,
-        scale_status: scaleStatus,
-        rife_status: rifeStatus
-      });
-
-      // Process the result
-      // result.data is an array with 4 elements:
-      // [0]: Video component output
-      // [1]: Download Video file
-      // [2]: Download GIF file
-      // [3]: Seed used for generation
-      return {
-        output_url: result.data[0], // Video URL
-        download_video_url: result.data[1], // Download video URL
-        download_gif_url: result.data[2], // Download GIF URL
-        seed_used: result.data[3], // Seed used for generation
-        model: "CogVideoX-5B-Space"
-      };
+      // Questa implementazione non funzionerà direttamente nel browser a causa di CORS
+      // e limitazioni con i moduli Node.js nel browser
+      throw new Error("Direct API call implementation not supported. Please use proxy mode.");
     }
   } catch (error) {
     console.error("Error during video generation with CogVideoX:", error);
@@ -123,8 +116,11 @@ export const enhancePromptWithCogVideoX = async (prompt) => {
       // Use the backend proxy
       const response = await axios.post(
         `${PROXY_BASE_URL}/api/cogvideox/enhance-prompt`,
-        { prompt }
+        { prompt },
+        { timeout: 30000 } // 30 secondi di timeout
       );
+
+      console.log("Response from enhance prompt API:", response.data);
 
       if (response.data.success) {
         return response.data.enhancedPrompt;
@@ -132,13 +128,8 @@ export const enhancePromptWithCogVideoX = async (prompt) => {
         throw new Error(response.data.error || "Unknown error");
       }
     } else {
-      // Direct call using Gradio client
-      const client = await Client.connect("THUDM/CogVideoX-5B-Space");
-      const result = await client.predict("/enhance_prompt_func", {
-        prompt: prompt
-      });
-
-      return result.data;
+      // Direct call implementation not supported in browser
+      throw new Error("Direct API call implementation not supported. Please use proxy mode.");
     }
   } catch (error) {
     console.error("Error enhancing prompt with CogVideoX:", error);
@@ -157,14 +148,34 @@ export const resizeVideoForCogVideoX = async (videoInput) => {
       throw new Error("Video input is required");
     }
 
-    // For this operation, we'll always use the direct API as it's more efficient
-    // for file processing and doesn't require our backend to handle large files
-    const client = await Client.connect("THUDM/CogVideoX-5B-Space");
-    const result = await client.predict("/resize_if_unfit", {
-      input_video: videoInput
-    });
+    if (USE_PROXY) {
+      // Use the backend proxy
+      const formData = new FormData();
+      formData.append('videoInput', videoInput);
 
-    return result.data;
+      const response = await axios.post(
+        `${PROXY_BASE_URL}/api/cogvideox/resize-video`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data'
+          },
+          timeout: 120000 // 2 minuti di timeout
+        }
+      );
+
+      console.log("Response from resize video API:", response.data);
+
+      if (response.data.success) {
+        // La risposta dipenderà da come hai implementato l'endpoint nel backend
+        return response.data.resizedVideo;
+      } else {
+        throw new Error(response.data.error || "Unknown error");
+      }
+    } else {
+      // Direct call implementation not supported in browser
+      throw new Error("Direct API call implementation not supported. Please use proxy mode.");
+    }
   } catch (error) {
     console.error("Error resizing video for CogVideoX:", error);
     throw error;
