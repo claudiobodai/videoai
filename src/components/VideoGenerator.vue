@@ -1,4 +1,4 @@
-<template>
+<template> 
   <div class="video-generator">
     <h2>Generatore di Video con AI</h2>
     
@@ -142,9 +142,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted } from 'vue';
 import { generateVideoWithStableDiffusionAPI } from '../services/stableDiffusionAPI';
 import { generateVideoWithOpenSora } from '../services/openSoraAPI';
+import { setWan21ApiUrl, generateVideoWithWan21 } from '../services/wan21API';
 import { Client } from "@gradio/client";
 
 // Stato
@@ -157,11 +158,19 @@ const error = ref('');
 const generatedVideo = ref(null);
 const generatedVideos = ref([]);
 const estimatedTime = ref(60);
+// Controllo se l'URL dell'API Wan2.1 è stato precedentemente salvato (es. dall'API Flask esposta con ngrok su Google Colab)
+const wan21ApiUrlSet = ref(!!sessionStorage.getItem('wan21ApiUrl'));
 
-// Opzioni motore
+// Se salvato in sessione, imposta l'URL dell'API Wan2.1
+if (wan21ApiUrlSet.value) {
+  setWan21ApiUrl(sessionStorage.getItem('wan21ApiUrl'));
+}
+
+// Opzioni per i motori di generazione
 const engines = [
   { name: 'Stable Diffusion', value: 'stablediffusion' },
-  { name: 'Open-Sora', value: 'opensora' }
+  { name: 'Open-Sora', value: 'opensora' },
+  { name: 'Wan2.1', value: 'wan21' }
 ];
 const selectedEngine = ref('stablediffusion');
 
@@ -174,7 +183,7 @@ const videoStyles = [
   { name: 'Vintage', prompt: 'filmato vintage, colori sbiaditi, grana pellicola, stile anni \'70' }
 ];
 
-// Formatta la data
+// Funzione per formattare la data
 const formatDate = (date) => {
   return new Date(date).toLocaleString('it-IT', {
     year: 'numeric',
@@ -185,7 +194,7 @@ const formatDate = (date) => {
   });
 };
 
-// Tronca testo con ellissi
+// Funzione per troncare il testo
 const truncateText = (text, maxLength) => {
   return text.length > maxLength 
     ? text.substring(0, maxLength) + '...' 
@@ -206,48 +215,31 @@ onMounted(() => {
     }
   }
   
-  // Aggiunge event listeners per il play/pause al passaggio del mouse
+  // Aggiunge event listeners per il play/pause al passaggio del mouse sulle miniature della gallery
   setTimeout(setupVideoHovers, 500);
 });
 
-// Setup per hover sulle miniature video con gestione migliorata degli errori AbortError
+// Setup per hover sulle miniature video (con gestione degli errori di play)
 const setupVideoHovers = () => {
   const videoElements = document.querySelectorAll('.gallery-item video');
-  
-  if (videoElements.length === 0) {
-    return;
-  }
-  
+  if (videoElements.length === 0) return;
   videoElements.forEach(video => {
     const parent = video.parentElement;
     let playPromise = null;
-    
     parent.addEventListener('mouseenter', () => {
       if (!playPromise) {
         playPromise = video.play()
-          .then(() => {
-            playPromise = null;
-          })
+          .then(() => { playPromise = null; })
           .catch(e => {
-            if (e.name !== 'AbortError') {
-              console.error('Errore play video:', e);
-            }
+            if (e.name !== 'AbortError') console.error('Errore play video:', e);
             playPromise = null;
           });
       }
     });
-    
     parent.addEventListener('mouseleave', () => {
       if (playPromise) {
-        playPromise
-          .then(() => {
-            video.pause();
-            video.currentTime = 0;
-          })
-          .catch(() => {
-            video.pause();
-            video.currentTime = 0;
-          });
+        playPromise.then(() => { video.pause(); video.currentTime = 0; })
+          .catch(() => { video.pause(); video.currentTime = 0; });
       } else {
         video.pause();
         video.currentTime = 0;
@@ -256,60 +248,78 @@ const setupVideoHovers = () => {
   });
 };
 
-// Seleziona uno stile predefinito
+// Seleziona uno stile predefinito senza modificare automaticamente il prompt
 const selectStyle = (style) => {
   selectedStyle.value = style.name;
-  // Non aggiorniamo automaticamente il prompt, lo aggiungeremo al momento della generazione
 };
 
-// Calcola il prompt finale con lo stile selezionato
+// Calcola il prompt finale integrando il prompt utente e lo stile selezionato
 const getEnhancedPrompt = () => {
   const style = videoStyles.find(s => s.name === selectedStyle.value);
-  if (style && prompt.value) {
-    return `${prompt.value}, ${style.prompt}`;
-  }
-  return prompt.value;
+  return style && prompt.value ? `${prompt.value}, ${style.prompt}` : prompt.value;
 };
 
-// Genera un nuovo video
+// Genera un nuovo video in base al motore selezionato
 const generateNewVideo = async () => {
   if (!prompt.value.trim()) return;
   
   loading.value = true;
   error.value = '';
   
-  // Calcola il tempo stimato in base ai parametri
-  estimatedTime.value = selectedEngine.value === 'opensora' ? 180 : Math.round((inferenceSteps.value * numFrames.value) / 10);
+  // Calcola il tempo stimato in base al motore
+  estimatedTime.value = selectedEngine.value === 'opensora'
+                        ? 180 
+                        : selectedEngine.value === 'wan21'
+                          ? 90 
+                          : Math.round((inferenceSteps.value * numFrames.value) / 10);
+  
+  // Prepara i dati del nuovo video
+  const newVideo = {
+    id: Date.now().toString(),
+    prompt: prompt.value,
+    enhancedPrompt: getEnhancedPrompt(),
+    style: selectedStyle.value,
+    engine: selectedEngine.value,
+    numFrames: numFrames.value,
+    inferenceSteps: inferenceSteps.value,
+    status: 'processing',
+    createdAt: new Date()
+  };
+  
+  // Visualizza subito lo stato "in elaborazione"
+  generatedVideo.value = newVideo;
   
   try {
-    // Prepara i dati del video
-    const newVideo = {
-      id: Date.now().toString(),
-      prompt: prompt.value,
-      enhancedPrompt: getEnhancedPrompt(),
-      style: selectedStyle.value,
-      engine: selectedEngine.value,
-      numFrames: numFrames.value,
-      inferenceSteps: inferenceSteps.value,
-      status: 'processing',
-      createdAt: new Date()
-    };
-    
-    // Impostare subito per mostrare l'UI di caricamento
-    generatedVideo.value = newVideo;
-    
-    // Esegui la chiamata API in base al motore selezionato
     let result;
-    if (selectedEngine.value === 'opensora') {
-      console.log("Generando video con Open-Sora...");
-      // Utilizzo del client Gradio per Open-Sora
-      const client = await Client.connect("claudiobxdai/Sora");
-      const gradioResponse = await client.predict("/predict", { 
-        prompt: getEnhancedPrompt()
+    if (selectedEngine.value === 'wan21') {
+      console.log("Generando video con Wan2.1...");
+      
+      // Se l'URL dell'API non è già stato impostato, richiedilo tramite window.prompt
+      if (!wan21ApiUrlSet.value) {
+        const apiUrl = window.prompt(
+          "Inserisci l'URL dell'API Wan2.1 (es. l'URL ngrok del server Flask su Google Colab):",
+          sessionStorage.getItem('wan21ApiUrl') || 'https://bead-35-197-47-34.ngrok-free.app'
+        );
+        if (apiUrl) {
+          setWan21ApiUrl(apiUrl);
+          sessionStorage.setItem('wan21ApiUrl', apiUrl);
+          wan21ApiUrlSet.value = true;
+        } else {
+          throw new Error("URL API Wan2.1 non fornito");
+        }
+      }
+      
+      result = await generateVideoWithWan21(getEnhancedPrompt(), {
+        resolution: '832*480',
+        sampleShift: numFrames.value > 24 ? 12 : 8,
+        guideScale: 6
       });
-      
+    } else if (selectedEngine.value === 'opensora') {
+      console.log("Generando video con Open-Sora...");
+      // Utilizza il client Gradio per Open-Sora
+      const client = await Client.connect("claudiobxdai/Sora");
+      const gradioResponse = await client.predict("/predict", { prompt: getEnhancedPrompt() });
       const [stato, videoUrl] = gradioResponse.data;
-      
       result = {
         output_url: videoUrl,
         model: "open-sora"
@@ -319,24 +329,23 @@ const generateNewVideo = async () => {
       result = await generateVideoWithStableDiffusionAPI(getEnhancedPrompt(), inferenceSteps.value);
     }
     
-    // Aggiorna con il risultato
+    // Aggiorna il video con il risultato ottenuto
     newVideo.result = result;
     newVideo.status = 'completed';
     
-    // Aggiorna e salva
     generatedVideo.value = newVideo;
     generatedVideos.value.unshift(newVideo);
     localStorage.setItem('generatedVideos', JSON.stringify(generatedVideos.value));
     
-    // Aggiorna i video hover
+    // Aggiorna gli event listeners per gli hover dei video
     setTimeout(setupVideoHovers, 500);
     
   } catch (err) {
     error.value = 'Si è verificato un errore durante la generazione del video. Riprova più tardi.';
     console.error("Errore dettagliato:", err);
     
-    // Fallback a video simulato in caso di errore
-    if (process.env.NODE_ENV === 'development' || true) { // Sempre per demo
+    // Fallback: in ambiente demo o sviluppo, genera un video simulato
+    if (process.env.NODE_ENV === 'development' || true) {
       setTimeout(() => {
         const fakeVideo = {
           id: Date.now().toString(),
@@ -347,11 +356,14 @@ const generateNewVideo = async () => {
           status: 'completed',
           result: {
             output_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-            model: selectedEngine.value === 'opensora' ? 'open-sora (simulato)' : 'stable-diffusion (simulato)'
+            model: selectedEngine.value === 'opensora'
+                     ? 'open-sora (simulato)'
+                     : selectedEngine.value === 'wan21'
+                       ? 'wan2.1 (simulato)'
+                       : 'stable-diffusion (simulato)'
           },
           createdAt: new Date()
         };
-        
         generatedVideo.value = fakeVideo;
         generatedVideos.value.unshift(fakeVideo);
         localStorage.setItem('generatedVideos', JSON.stringify(generatedVideos.value));
@@ -362,7 +374,7 @@ const generateNewVideo = async () => {
   }
 };
 
-// Scarica il video
+// Funzione per scaricare il video generato
 const downloadVideo = () => {
   if (!generatedVideo.value || !generatedVideo.value.result || !generatedVideo.value.result.output_url) return;
   
@@ -374,11 +386,12 @@ const downloadVideo = () => {
   document.body.removeChild(link);
 };
 
-// Seleziona un video dalla galleria
+// Funzione per selezionare un video dalla galleria
 const selectVideo = (video) => {
   generatedVideo.value = video;
 };
 </script>
+
 
 <style scoped>
 .video-generator {
