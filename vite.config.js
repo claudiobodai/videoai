@@ -1,14 +1,27 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [vue()],
   server: {
     proxy: {
-      '/api-huggingface': {
-        target: 'https://api-inference.huggingface.co',
+      '/api': {
+        target: 'https://videoai-backend.onrender.com',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api-huggingface/, '')
+        secure: false,
+        ws: true,
+        configure: (proxy, _options) => {
+          proxy.on('error', (err, _req, _res) => {
+            console.log('proxy error', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, _res) => {
+            console.log('Sending Request:', req.method, req.url);
+          });
+          proxy.on('proxyRes', (proxyRes, req, _res) => {
+            console.log('Received Response from:', req.url, proxyRes.statusCode);
+          });
+        },
       }
     }
   }

@@ -225,6 +225,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { generateVideoWithCogVideoX, enhancePromptWithCogVideoX } from '../services/cogVideoXAPI';
+import { generateVideoMock } from '../utils/videoMock';
 import { Client } from "@gradio/client";
 
 // Stato
@@ -304,19 +305,26 @@ const enhancePrompt = async () => {
   error.value = '';
   
   try {
-    const enhancedPrompt = await enhancePromptWithCogVideoX(prompt.value);
-    // Make sure we have a string
-    if (typeof enhancedPrompt === 'string') {
-      prompt.value = enhancedPrompt;
-    } else if (Array.isArray(enhancedPrompt) && enhancedPrompt.length > 0) {
-      prompt.value = enhancedPrompt[0];
+    console.log("Sending prompt enhancement request for:", prompt.value);
+    const enhancedPromptResult = await enhancePromptWithCogVideoX(prompt.value);
+    
+    // Make sure we have a valid response
+    if (typeof enhancedPromptResult === 'string' && enhancedPromptResult.trim()) {
+      console.log("Received enhanced prompt:", enhancedPromptResult);
+      prompt.value = enhancedPromptResult;
+    } else if (Array.isArray(enhancedPromptResult) && enhancedPromptResult.length > 0) {
+      console.log("Received array of enhanced prompts, using first one:", enhancedPromptResult[0]);
+      prompt.value = enhancedPromptResult[0];
     } else {
       // In case of unexpected response, keep the original prompt
-      console.warn("Received unexpected response format for enhanced prompt:", enhancedPrompt);
+      console.warn("Received unexpected response format for enhanced prompt:", enhancedPromptResult);
     }
   } catch (err) {
-    error.value = "Errore durante il miglioramento del prompt: " + err.message;
+    error.value = "Errore durante il miglioramento del prompt: " + (err.message || 'Errore sconosciuto');
     console.error("Prompt enhancement error:", err);
+    
+    // Optional fallback - add some enhancements directly
+    prompt.value = `${prompt.value}, cinematografico, dettagliato, illuminazione professionale`;
   } finally {
     enhancing.value = false;
   }
@@ -404,19 +412,22 @@ const getEnhancedPrompt = () => {
 
 // Genera un nuovo video in base al motore selezionato
 const generateNewVideo = async () => {
-  if (!prompt.value.trim()) return;
+  if (!prompt.value || typeof prompt.value !== 'string' || !prompt.value.trim()) {
+    error.value = "Il prompt non può essere vuoto";
+    return;
+  }
   
   loading.value = true;
   error.value = '';
   
   // Calcola il tempo stimato in base al motore
   estimatedTime.value = selectedEngine.value === 'opensora'
-                        ? 180 
-                        : selectedEngine.value === 'wan21'
-                          ? 90 
-                          : selectedEngine.value === 'cogvideox'
-                            ? 120
-                            : Math.round((inferenceSteps.value * numFrames.value) / 10);
+                    ? 180 
+                    : selectedEngine.value === 'wan21'
+                      ? 90 
+                      : selectedEngine.value === 'cogvideox'
+                        ? 120
+                        : Math.round((inferenceSteps.value * numFrames.value) / 10);
   
   // Prepara i dati del nuovo video
   const newVideo = {
@@ -440,16 +451,31 @@ const generateNewVideo = async () => {
     if (selectedEngine.value === 'cogvideox') {
       console.log("Generando video con CogVideoX...");
       
-      // Utilizza CogVideoX
-      result = await generateVideoWithCogVideoX(prompt.value, {
-        imageInput: imageInput.value,
-        videoInput: videoInput.value,
-        videoStrength: videoStrength.value,
-        seedValue: seedValue.value,
-        scaleStatus: scaleStatus.value,
-        rifeStatus: rifeStatus.value
-      });
-      
+      try {
+        // Utilizza CogVideoX
+        result = await generateVideoWithCogVideoX(prompt.value, {
+          imageInput: imageInput.value,
+          videoInput: videoInput.value,
+          videoStrength: parseFloat(videoStrength.value),
+          seedValue: parseInt(seedValue.value),
+          scaleStatus: scaleStatus.value,
+          rifeStatus: rifeStatus.value
+        });
+      } catch (cogVideoError) {
+        console.error("Errore specifico con CogVideoX:", cogVideoError);
+        
+        // Mostra un errore specifico all'utente
+        error.value = "Errore durante la generazione del video con CogVideoX. " + 
+                      (cogVideoError.message || "Usando versione demo.");
+                      
+        // Continua usando i dati del fallback forniti dalla funzione
+        if (cogVideoError.fallback) {
+          result = cogVideoError;
+        } else {
+          // Se non abbiamo un fallback dall'errore, genera uno
+          result = await generateVideoMock(getEnhancedPrompt());
+        }
+      }
     } else if (selectedEngine.value === 'wan21') {
       console.log("Generando video con Wan2.1...");
       
@@ -473,23 +499,17 @@ const generateNewVideo = async () => {
       
     } else if (selectedEngine.value === 'opensora') {
       console.log("Generando video con Open-Sora...");
-      // Utilizza il client Gradio per Open-Sora (placeholder)
-      try {
-        const client = await Client.connect("claudiobxdai/Sora");
-        const gradioResponse = await client.predict("/predict", { prompt: getEnhancedPrompt() });
-        result = {
-          output_url: gradioResponse.data[1] || "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
-          model: "open-sora"
-        };
-      } catch (err) {
-        console.error("Errore con OpenSora API, utilizzo fallback:", err);
-        result = await generateVideoMock(getEnhancedPrompt());
-      }
+      // Usa un fallback
+      result = await generateVideoMock(getEnhancedPrompt());
       
     } else {
       console.log("Generando video con Stable Diffusion...");
-      // Placeholder per generazione video con Stable Diffusion
+      // Usa un fallback
       result = await generateVideoMock(getEnhancedPrompt());
+    }
+    
+    if (!result) {
+      throw new Error("Nessun risultato ricevuto dalla generazione video");
     }
     
     // Aggiorna il video con il risultato ottenuto
@@ -504,33 +524,31 @@ const generateNewVideo = async () => {
     setTimeout(setupVideoHovers, 500);
     
   } catch (err) {
-    error.value = 'Si è verificato un errore durante la generazione del video. Riprova più tardi.';
     console.error("Errore dettagliato:", err);
+    error.value = 'Si è verificato un errore durante la generazione del video: ' + (err.message || 'Errore sconosciuto');
     
     // Fallback: in ambiente demo o sviluppo, genera un video simulato
-    if (process.env.NODE_ENV === 'development' || true) {
-      setTimeout(() => {
-        const fakeVideo = {
-          id: Date.now().toString(),
-          prompt: prompt.value,
-          enhancedPrompt: getEnhancedPrompt(),
-          style: selectedStyle.value,
-          engine: selectedEngine.value,
-          status: 'completed',
-          result: {
-            output_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-            model: `${selectedEngine.value} (simulato)`
-          },
-          createdAt: new Date()
-        };
-        generatedVideo.value = fakeVideo;
-        generatedVideos.value.unshift(fakeVideo);
-        localStorage.setItem('generatedVideos', JSON.stringify(generatedVideos.value));
-        
-        // Aggiorna gli event listeners per gli hover dei video
-        setTimeout(setupVideoHovers, 500);
-      }, 3000);
-    }
+    setTimeout(() => {
+      const fakeVideo = {
+        id: Date.now().toString(),
+        prompt: prompt.value,
+        enhancedPrompt: getEnhancedPrompt(),
+        style: selectedStyle.value,
+        engine: selectedEngine.value,
+        status: 'completed',
+        result: {
+          output_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+          model: `${selectedEngine.value} (simulato)`
+        },
+        createdAt: new Date()
+      };
+      generatedVideo.value = fakeVideo;
+      generatedVideos.value.unshift(fakeVideo);
+      localStorage.setItem('generatedVideos', JSON.stringify(generatedVideos.value));
+      
+      // Aggiorna gli event listeners per gli hover dei video
+      setTimeout(setupVideoHovers, 500);
+    }, 3000);
   } finally {
     loading.value = false;
   }

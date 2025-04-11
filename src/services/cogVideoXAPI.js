@@ -1,8 +1,22 @@
 // src/services/cogVideoXAPI.js
 import axios from "axios";
 
-// URL del backend
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://videoai-backend.onrender.com";
+// Use relative URL when in development (works with Vite proxy)
+// or absolute URL in production
+const API_BASE_URL = import.meta.env.PROD 
+  ? (import.meta.env.VITE_API_BASE_URL || "https://videoai-backend.onrender.com")
+  : ""; // Empty string means use the current origin (which will go through the Vite proxy)
+
+// Create axios instance with default config
+const apiClient = axios.create({
+  timeout: 300000, // 5 minute timeout (video generation can take time)
+});
+
+// Add request interceptor for logging
+apiClient.interceptors.request.use(config => {
+  console.log(`Sending ${config.method.toUpperCase()} request to: ${config.url}`);
+  return config;
+});
 
 /**
  * Generate a video using CogVideoX-5B-Space
@@ -16,11 +30,11 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://videoai-backe
  * @param {boolean} options.rifeStatus - Frame Interpolation (8fps -> 16fps)
  * @returns {Promise<Object>} - Response containing video URLs
  */
-// Updated version of generateVideoWithCogVideoX in cogVideoXAPI.js
 export const generateVideoWithCogVideoX = async (prompt, options = {}) => {
   try {
     console.log("Generating video with CogVideoX, prompt:", prompt);
 
+    // Validate inputs
     if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
       throw new Error("Prompt must be a non-empty string");
     }
@@ -50,19 +64,18 @@ export const generateVideoWithCogVideoX = async (prompt, options = {}) => {
       rifeStatus: Boolean(rifeStatus)
     }));
 
-    // Remove any duplicate slashes in URL
-    const apiUrl = `${API_BASE_URL}/api/cogvideox/generate`.replace(/([^:]\/)\/+/g, "$1");
+    // Full URL to the endpoint
+    const apiUrl = `${API_BASE_URL}/api/cogvideox/generate`;
 
     try {
-      const response = await axios.post(
+      console.log("Sending video generation request to:", apiUrl);
+      const response = await apiClient.post(
         apiUrl,
         formData,
         {
           headers: {
-            'Content-Type': 'multipart/form-data'
+            'Content-Type': 'multipart/form-data',
           },
-          // Add longer timeout for video generation
-          timeout: 300000, // 5 minutes
         }
       );
 
@@ -83,6 +96,21 @@ export const generateVideoWithCogVideoX = async (prompt, options = {}) => {
       }
     } catch (apiError) {
       console.error("API error:", apiError);
+      
+      if (apiError.response) {
+        console.error("API response status:", apiError.response.status);
+        console.error("API response data:", apiError.response.data);
+      }
+      
+      // Check if this is a CORS or network error
+      const isCorsError = apiError.message && (
+        apiError.message.includes('CORS') || 
+        apiError.message.includes('Network Error')
+      );
+      
+      if (isCorsError) {
+        console.warn("CORS or network issue detected. Using fallback video.");
+      }
       
       // Use a fallback for development/testing
       console.log("Using fallback video response");
@@ -114,26 +142,30 @@ export const generateVideoWithCogVideoX = async (prompt, options = {}) => {
  * @param {string} prompt - Original prompt to enhance
  * @returns {Promise<string>} - Enhanced prompt
  */
-// Update this function in src/services/cogVideoXAPI.js
 export const enhancePromptWithCogVideoX = async (prompt) => {
   try {
-    if (!prompt) {
-      throw new Error("Prompt is required");
+    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+      throw new Error("Prompt must be a non-empty string");
     }
 
-    // Remove any duplicate slashes in URL
-    const apiUrl = `${API_BASE_URL}/api/cogvideox/enhance-prompt`.replace(/([^:]\/)\/+/g, "$1");
+    // Full URL to the endpoint
+    const apiUrl = `${API_BASE_URL}/api/cogvideox/enhance-prompt`;
     
-    const response = await axios.post(
+    console.log("Sending prompt enhancement request to:", apiUrl);
+    const response = await apiClient.post(
       apiUrl,
       { prompt },
-      { timeout: 30000 } // 30 secondi di timeout
+      { 
+        headers: {
+          'Content-Type': 'application/json'
+        },
+      }
     );
 
     console.log("Response from enhance prompt API:", response.data);
 
     if (response.data.success) {
-      // Fix: Handle both string and array responses
+      // Handle both string and array responses
       if (Array.isArray(response.data.enhancedPrompt)) {
         return response.data.enhancedPrompt[0]; // Return the first item if it's an array
       }
@@ -143,6 +175,13 @@ export const enhancePromptWithCogVideoX = async (prompt) => {
     }
   } catch (error) {
     console.error("Error enhancing prompt with CogVideoX:", error);
+    
+    // If this is a CORS or network error, provide a fallback enhanced prompt
+    if (error.message && (error.message.includes('CORS') || error.message.includes('Network Error'))) {
+      console.warn("CORS or network issue detected for prompt enhancement. Using fallback.");
+      return `${prompt}, cinematografico, dettagliato, illuminazione professionale, alta qualità, movimento fluido`;
+    }
+    
     throw error;
   }
 };
@@ -161,17 +200,17 @@ export const resizeVideoForCogVideoX = async (videoInput) => {
     const formData = new FormData();
     formData.append('videoInput', videoInput);
 
-    // Remove any duplicate slashes in URL
-    const apiUrl = `${API_BASE_URL}/api/cogvideox/resize-video`.replace(/([^:]\/)\/+/g, "$1");
+    // Full URL to the endpoint
+    const apiUrl = `${API_BASE_URL}/api/cogvideox/resize-video`;
 
-    const response = await axios.post(
+    console.log("Sending video resize request to:", apiUrl);
+    const response = await apiClient.post(
       apiUrl,
       formData,
       {
         headers: {
           'Content-Type': 'multipart/form-data'
-        },
-        timeout: 120000 // 2 minutes timeout
+        }
       }
     );
 
