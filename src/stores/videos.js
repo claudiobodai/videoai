@@ -1,120 +1,62 @@
-import { defineStore } from 'pinia';
-import { generateVideo } from '../services/deepai';
+// Replace src/services/videoService.js with this cleaner version
+import axios from "axios";
 
-export const useVideosStore = defineStore('videos', {
-  state: () => ({
-    generatedVideos: [],
-    pendingVideos: [],
-    isLoading: false,
-    error: null,
-  }),
+// URL del backend (cambia in base all'ambiente)
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3001";
+
+/**
+ * Service mockup per la generazione di video
+ * Questo servizio offre funzioni di fallback per quando le API reali non sono disponibili
+ */
+
+// Funzione mockup per generare video (modalità fallback/simulazione)
+export const generateVideoMock = async (promptText, options = {}) => {
+  // Simula un ritardo di elaborazione
+  await new Promise(resolve => setTimeout(resolve, 2000));
   
-  getters: {
-    getGeneratedVideos: (state) => state.generatedVideos,
-    getPendingVideos: (state) => state.pendingVideos,
-    getIsLoading: (state) => state.isLoading,
-    getError: (state) => state.error,
-  },
+  // Array di video di esempio
+  const sampleVideos = [
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4'
+  ];
   
-  actions: {
-    // Genera video con DeepAI (o altra API)
-    async generateVideoWithAI(prompt, duration = 5) {
-      if (!prompt.trim()) return;
-      
-      this.isLoading = true;
-      this.error = null;
-      
-      try {
-        const result = await generateVideo(prompt);
-        
-        // Aggiungi metadati alla risposta
-        const videoRequest = {
-          id: Date.now().toString(),
-          prompt,
-          duration,
-          status: result.status,
-          jobId: result.id,
-          createdAt: new Date()
-        };
-        
-        // Aggiungi ai video in attesa
-        this.pendingVideos.unshift(videoRequest);
-        
-        // In un'applicazione reale, inizieresti un polling per controllare lo stato
-        // Qui simuliamo che il video sarà pronto dopo un po'
-        setTimeout(() => {
-          this.updateVideoStatus(videoRequest.id, 'completed', 'https://example.com/fake-video.mp4');
-        }, 5000);
-        
-        return videoRequest;
-      } catch (error) {
-        this.error = 'Errore durante la generazione del video.';
-        console.error(error);
-        return null;
-      } finally {
-        this.isLoading = false;
-      }
-    },
-    
-    // Aggiorna lo stato di un video
-    updateVideoStatus(id, status, outputUrl = null) {
-      const pendingIndex = this.pendingVideos.findIndex(video => video.id === id);
-      
-      if (pendingIndex !== -1) {
-        const video = this.pendingVideos[pendingIndex];
-        
-        // Se completato, spostalo nei video generati
-        if (status === 'completed' && outputUrl) {
-          const completedVideo = {
-            ...video,
-            status,
-            outputUrl,
-            completedAt: new Date()
-          };
-          
-          this.generatedVideos.unshift(completedVideo);
-          this.pendingVideos.splice(pendingIndex, 1);
-          
-          // Salva nel localStorage
-          this.saveVideos();
-        } else {
-          // Altrimenti aggiorna solo lo stato
-          this.pendingVideos[pendingIndex].status = status;
-        }
-      }
-    },
-    
-    // Elimina un video generato
-    deleteVideo(videoId) {
-      this.generatedVideos = this.generatedVideos.filter(video => video.id !== videoId);
-      this.saveVideos();
-    },
-    
-    // Controlla lo stato dei video in attesa (simula il polling)
-    checkPendingVideos() {
-      // In un'applicazione reale, faresti una chiamata API per ciascun video in attesa
-      // per controllarne lo stato
-      console.log('Controllo video in attesa:', this.pendingVideos.length);
-    },
-    
-    // Salva i video nel localStorage
-    saveVideos() {
-      localStorage.setItem('generatedVideos', JSON.stringify(this.generatedVideos));
-      localStorage.setItem('pendingVideos', JSON.stringify(this.pendingVideos));
-    },
-    
-    // Carica i video dal localStorage
-    loadVideos() {
-      const savedVideos = localStorage.getItem('generatedVideos');
-      const pendingVideos = localStorage.getItem('pendingVideos');
-      
-      if (savedVideos) {
-        this.generatedVideos = JSON.parse(savedVideos);
-      }
-      
-      if (pendingVideos) {
-        this.pendingVideos = JSON.parse(pendingVideos);
-      }
-    }
-  }
-});
+  // Sceglie un video casuale
+  const randomVideo = sampleVideos[Math.floor(Math.random() * sampleVideos.length)];
+  
+  return {
+    output_url: randomVideo,
+    download_video_url: randomVideo,
+    download_gif_url: "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeHRwcG5ycnd6MzNsc2lyOHpuNHp6cHAycDIzbXpjYjEzczI0Z3NieSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/S6VGjvmFRu5Qk/giphy.gif",
+    model: "video-simulation",
+    status: "completed",
+    seed_used: Math.floor(Math.random() * 1000),
+    fallback: true
+  };
+};
+
+// Funzione per aumentare la risoluzione di un video
+export const enhanceVideoResolution = async (videoUrl) => {
+  // Per ora, restituiamo lo stesso video
+  // In futuro, qui implementeremo un servizio reale per migliorare la risoluzione
+  return {
+    output_url: videoUrl,
+    enhanced: true
+  };
+};
+
+// Opzioni per future integrazioni API
+export const videoServiceProviders = {
+  STABLE_DIFFUSION: 'stablediffusion',
+  OPEN_SORA: 'opensora',
+  WAN21: 'wan21',
+  COGVIDEOX: 'cogvideox',
+};
+
+// Funzione per verificare se un'API è disponibile
+export const checkVideoServiceAvailability = async (providerName) => {
+  console.log(`Verifica disponibilità del provider ${providerName}...`);
+  
+  // Simulazione: tutti i provider tranne OpenSora sono disponibili
+  return providerName !== videoServiceProviders.OPEN_SORA;
+};

@@ -294,18 +294,29 @@ const handleVideoUpload = (event) => {
   }
 };
 
-// Funzione per migliorare il prompt con CogVideoX
 const enhancePrompt = async () => {
-  if (!prompt.value.trim()) return;
+  if (!prompt.value || typeof prompt.value !== 'string' || !prompt.value.trim()) {
+    error.value = "Il prompt non può essere vuoto";
+    return;
+  }
   
   enhancing.value = true;
   error.value = '';
   
   try {
     const enhancedPrompt = await enhancePromptWithCogVideoX(prompt.value);
-    prompt.value = enhancedPrompt;
+    // Make sure we have a string
+    if (typeof enhancedPrompt === 'string') {
+      prompt.value = enhancedPrompt;
+    } else if (Array.isArray(enhancedPrompt) && enhancedPrompt.length > 0) {
+      prompt.value = enhancedPrompt[0];
+    } else {
+      // In case of unexpected response, keep the original prompt
+      console.warn("Received unexpected response format for enhanced prompt:", enhancedPrompt);
+    }
   } catch (err) {
     error.value = "Errore durante il miglioramento del prompt: " + err.message;
+    console.error("Prompt enhancement error:", err);
   } finally {
     enhancing.value = false;
   }
